@@ -1,3 +1,9 @@
+
+#ifndef BUTTON_HPP
+#define BUTTON_HPP
+
+#define BUTTON_PIN    21
+
 class Button {
   public:
     Button(int pin) {
@@ -18,3 +24,5 @@ class Button {
   private:
     int pin;
 };
+
+#endif  // BUTTON_HPP

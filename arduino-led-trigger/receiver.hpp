@@ -1,8 +1,39 @@
+
+#ifndef RECEIVER_HPP
+#define RECEIVER_HPP
+
+#include <SoftwareSerial.h>   // HC-12 module
+#include <FastLED.h>          // FastLED library
+
+// HC-12 module
+SoftwareSerial HC12(2, 3);  // HC-12 TX Pin, HC-12 RX Pin
+#define START_MARKER 0x7E
+#define END_MARKER 0x7F
+
+// bool ledonrx = false;
+// bool rainbowrx = false;
+
+struct dataPacket {
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+  bool ledon;
+  bool rainbow;
+  uint8_t checksum;
+};
+
+dataPacket packet;
+
 class Receiver {
   public:
-    Receiver(int pin) {
-      this->pin = pin;
-      pinMode(pin, INPUT);
+    Receiver() {
+        // HC-12 module communication
+        HC12.begin(9600);
+        ledon = false;
+        rainbow_effect = false;
+        red = 0;
+        green = 0;
+        blue = 0;
     }
     
     /**
@@ -31,7 +62,7 @@ class Receiver {
             // Calculate the checksum of the received packet
             uint8_t calculatedChecksum = calculateChecksum(packet);
 
-            // // Debug prints for received packet and calculated checksum
+            // Debug prints for received packet and calculated checksum
             // Serial.print("Received packet: ");
             // Serial.print(packet.red);
             // Serial.print(", ");
@@ -50,11 +81,11 @@ class Receiver {
             // Validate integrity
             if (packet.checksum == calculatedChecksum) {
               // Update your variables here
-              RED = packet.red;
-              GREEN = packet.green;
-              BLUE = packet.blue;
-              ledonrx = packet.ledon;
-              rainbowrx = packet.rainbow;
+              red = packet.red;
+              green = packet.green;
+              blue = packet.blue;
+              ledon = packet.ledon;
+              rainbow_effect = packet.rainbow;
               return true;
             } else {
               Serial.println("ERROR: checksum mismatch, possible data corruption");
@@ -76,9 +107,40 @@ class Receiver {
       return false;
     }
 
+    /**
+     * @brief Gets the color values
+     * 
+     * This function will return the color values.
+     * 
+     * @return the color values
+     */
+    CRGB getColors() {
+        return CRGB(red, green, blue);
+    }
+
+    bool getOnState() {
+        return ledon;
+    }
+
+    bool getRainbowEffectState() {
+        return rainbow_effect;
+    }
+
+    void setOnState(bool ledon) {
+        this->ledon = ledon;
+    }
+
+    void setRainbowEffect(bool rainbow_effect) {
+        this->rainbow_effect = rainbow_effect;
+    }
+
 
   private:
-    int pin;
+    int8_t red;
+    int8_t green;
+    int8_t blue;
+    bool ledon;
+    bool rainbow_effect;
     
     /**
      * @brief Calculates the checksum for the data packet
@@ -99,3 +161,5 @@ class Receiver {
       return checksum;
     }
 };
+
+#endif // RECEIVER_HPP

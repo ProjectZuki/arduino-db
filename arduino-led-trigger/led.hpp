@@ -1,5 +1,75 @@
+
+#ifndef LED_HPP
+#define LED_HPP
+
+#include <IRremote.h>         // IR remote
+#include <FastLED.h>          // NeoPixel ARGB
+#include <cppQueue.h>         // queue for RGB color states
+#include <EEPROM.h>           // save ROM data durong off state
+
+#include "receiver.hpp"       // HC-12 module
+
+// ARGB pin
+#define NUM_LEDS      144
+#define MAX_INTENSITY 32    // 255 / 128 / 64 / 32 / 16 / 8
+CRGB led[NUM_LEDS];
+
+#define LED_RED       5
+#define LED_GREEN     6
+#define LED_BLUE      9
+
+// piezo pin
+#define PIEZO_PIN     A0
+unsigned int PIEZO_THRESH = 300;
+
+// modifier tied to PWR button
+bool modifier = false;
+
+// delay threshold for flash duration
+int DELAY_THRESHOLD = 100;
+
+// EEPROM addresses
+#define RED_ADDR      0
+#define GREEN_ADDR    1
+#define BLUE_ADDR     2
+#define RAINBOW_ADDR  3
+
+// Color array for rainbow effect
+bool rainbow = false;
+int color_index = 0;
+CRGB RainbowColors[] = {
+  CRGB::Red,
+  CRGB::Orange,
+  CRGB::Yellow,
+  CRGB::Green,
+  CRGB::Blue,
+  CRGB::Indigo,
+  CRGB::Violet
+};
+
+// For trail ripple effect
+const int TRAIL_LENGTH = 25;
+const int TRAIL_MAX = 10;  // Maximum number of simultaneous trails
+
+struct Trail {
+  int position;
+  bool active;
+  CRGB color;
+};
+
+Trail trails[TRAIL_MAX];
+
+cppQueue CRGBQueue(sizeof(CRGB), 5);  // queue for custom colors
+cppQueue multicolorQueue(sizeof(CRGB), 5);  // queue for multicolor effect
+
+Receiver receiver;
+
+bool IR_disabled = false;
+
 class LED {
   public:
+    bool multicolor;
+
     LED(int pin) {
       this->pin = pin;
       pinMode(pin, OUTPUT);
@@ -123,13 +193,13 @@ class LED {
         // ==================== row 7 | RED/BLUE/GREEN increase, QUICK ===================
 
         case 0x14:
-          adj_color(RED, MAX_INTENSITY/5);
+          adj_color(red, MAX_INTENSITY/5);
           break;
         case 0x15:
-          adj_color(GREEN, MAX_INTENSITY/5);
+          adj_color(green, MAX_INTENSITY/5);
           break;
         case 0x16:
-          adj_color(BLUE, MAX_INTENSITY/5);
+          adj_color(blue, MAX_INTENSITY/5);
           break;
         // QUICK | Sensitivity down
         case 0x17:
@@ -152,13 +222,13 @@ class LED {
         // ==================== row 8 | RED/BLUE/GREEN decrease, SLOW ====================
 
         case 0x10:
-          adj_color(RED, MAX_INTENSITY/-5);
+          adj_color(red, MAX_INTENSITY/-5);
           break;
         case 0x11:
-          adj_color(GREEN, MAX_INTENSITY/-5);
+          adj_color(green, MAX_INTENSITY/-5);
           break;
         case 0x12:
-          adj_color(BLUE, MAX_INTENSITY/-5);
+          adj_color(blue, MAX_INTENSITY/-5);
           break;
         // SLOW | Sensitivity up
         case 0x13:
@@ -212,20 +282,20 @@ class LED {
           // }
 
           // custom multicolor
-          pushback(multicolorQueue, RED, GREEN, BLUE);
+          pushback(multicolorQueue, red, green, blue);
           break;
         }
         //DIY3
         case 0xE:
           // add to color queue
-          pushback(CRGBQueue, RED, GREEN, BLUE);
+          pushback(CRGBQueue, red, green, blue);
           // // check current color queue
           // check_colorQueue();
           break;
         // AUTO(save) | IR lock
         case 0xF:
         {
-          save(RED, GREEN, BLUE);    // save current color
+        //   save(red, green, blue);    // save current color
           EEPROM.write(RAINBOW_ADDR, rainbow);
           flashConfirm();                   // flash to confirm save
           break;
@@ -294,9 +364,9 @@ class LED {
      */
     void onLED() {
       // built-in LED
-      digitalWrite(LED_RED, RED);
-      digitalWrite(LED_GREEN, GREEN);
-      digitalWrite(LED_BLUE, BLUE);
+      digitalWrite(LED_RED, red);
+      digitalWrite(LED_GREEN, green);
+      digitalWrite(LED_BLUE, blue);
     }
 
     /**
@@ -323,7 +393,7 @@ class LED {
      */
     void onARGB() {
       // do the thing but ARGB
-      fill_solid(led, NUM_LEDS, rainbow? RainbowColors[(color_index++) % sizeof(RainbowColors)] : CRGB(RED, GREEN, BLUE));
+      fill_solid(led, NUM_LEDS, rainbow? RainbowColors[(color_index++) % sizeof(RainbowColors)] : CRGB(red, green, blue));
 
       FastLED.show();
     }
@@ -339,6 +409,7 @@ class LED {
       // do the off thing
       fill_solid(led, NUM_LEDS, CRGB(0, 0, 0));
       FastLED.show();
+      Serial.println("turning LED off");
     }
 
     /**
@@ -382,13 +453,14 @@ class LED {
           delay(200);  // delay to reduce multiple inputs
           IrReceiver.resume();
         } else if (receiver.receiveData()) {
-          ledon = ledonrx;
+          ledon = receiver.getOnState();
           if (!ledon) {
             // reset
             offARGB();
             offLED();
           } else {
             // apply modifications to color
+            setColor(receiver.getColors());
             onARGB();
             onLED();
           }
@@ -410,9 +482,9 @@ class LED {
       }
       CRGB color;
       CRGBQueue.pop(&color);
-      RED = color.r;
-      GREEN = color.g;
-      BLUE = color.b;
+      red = color.r;
+      green = color.g;
+      blue = color.b;
 
       // Serial.println("Color from queue: " + String(RED) + ", " + String(GREEN) + ", " + String(BLUE));
       delay(200);  // delay to prevent multiple pops
@@ -427,9 +499,9 @@ class LED {
      */
     void load() {
       // read from EEPROM
-      RED = EEPROM.read(RED_ADDR);
-      GREEN = EEPROM.read(GREEN_ADDR);
-      BLUE = EEPROM.read(BLUE_ADDR);
+      red = EEPROM.read(RED_ADDR);
+      green = EEPROM.read(GREEN_ADDR);
+      blue = EEPROM.read(BLUE_ADDR);
       rainbow = EEPROM.read(RAINBOW_ADDR);
     }
 
@@ -458,9 +530,9 @@ class LED {
      */
     void setColor(CRGB color) {
       // set new RGB values, constrain to max intensity value
-      RED = scale8(color.r, MAX_INTENSITY);
-      GREEN = scale8(color.g, MAX_INTENSITY);
-      BLUE = scale8(color.b, MAX_INTENSITY);
+      red = scale8(color.r, MAX_INTENSITY);
+      green = scale8(color.g, MAX_INTENSITY);
+      blue = scale8(color.b, MAX_INTENSITY);
     }
 
     /**
@@ -473,7 +545,7 @@ class LED {
      * 
      * @return N/A
      */
-    void adj_color(uint8_t& color, int scale) {
+    void adj_color(uint8_t color, int scale) {
       // Adjust color value
       int newColor = color + scale;
 
@@ -506,7 +578,7 @@ class LED {
           if (!trails[i].active) {
             trails[i].position = 0;  // Initialize new trail position at the beginning
             trails[i].active = true;
-            trails[i].color = rainbow ? RainbowColors[color_index] : CRGB(RED, GREEN, BLUE);
+            trails[i].color = rainbow ? RainbowColors[color_index] : CRGB(red, green, blue);
             if (rainbow) {
               color_index = (color_index + 1) % (sizeof(RainbowColors) / sizeof(RainbowColors[0]));
             }
@@ -566,7 +638,7 @@ class LED {
         if (!trails[i].active) {
           trails[i].position = 0;  // Initialize new trail position at the beginning
           trails[i].active = true;
-          trails[i].color = rainbow ? RainbowColors[color_index] : CRGB(RED, GREEN, BLUE);
+          trails[i].color = rainbow ? RainbowColors[color_index] : CRGB(red, green, blue);
           if (rainbow) {
             color_index = (color_index + 1) % (sizeof(RainbowColors) / sizeof(RainbowColors[0]));
           }
@@ -623,7 +695,9 @@ class LED {
           
           // check for RF signal
           if (receiver.receiveData()) {
-            if (!ledonrx) {
+            Serial.println("Received RF signal");
+            if (receiver.getRainbowEffectState() == false) {
+                Serial.println("Rainbow effect false");
               // reset
               offARGB();
               return;
@@ -702,7 +776,7 @@ class LED {
      */
     void flashConfirm() {
       for (int i = 0; i < 3; i ++) {
-        led[0] = CRGB(RED, GREEN, BLUE);
+        led[0] = CRGB(red, green, blue);
         FastLED.show();
 
         onLED();
@@ -741,7 +815,34 @@ class LED {
         FastLED.show();
       }
     } 
+
+    void setOnState(bool ledon) {
+        this->ledon = ledon;
+    }
+
+    void setRainbowEffectState(bool rainboweffect) {
+        this->rainboweffect = rainboweffect;
+    }
+
+    CRGB getColors() {
+        return CRGB(red, green, blue);
+    }
+
+    bool getOnState() {
+        return ledon;
+    }
+
+    bool getRainbowEffectState() {
+        return rainboweffect;
+    }
   
   private:
     int pin;
+    bool ledon;
+    bool rainboweffect;
+    int8_t red;
+    int8_t green;
+    int8_t blue;
 };
+
+#endif // LED_HPP
